@@ -29,7 +29,7 @@ import { TACTICAL_VIDEO_FEEDS } from '../data/videoStreams';
 import VisionWorker from '../workers/visionWorker?worker';
 import { playTacticalAlertChime } from '../utils/webcamVision';
 import { DEFAULT_DETECTION_FILTER, DetectionClassFilter } from '../utils/cocoLabels';
-import { biometricEngine } from '../utils/faceRecognitionEngine';
+import { biometricEngine, extractBiometricVectorFromCanvas } from '../utils/faceRecognitionEngine';
 import Hls from 'hls.js';
 
 interface CameraStreamProps {
@@ -346,6 +346,26 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
       } else {
         targetsRef.current = updateSimulationStep(targetsRef.current, deltaTime, camera.virtualFences);
         currentTargets = targetsRef.current;
+      }
+
+
+      // Extract REAL biometric features if it's the live webcam feed
+      if (streamMode === 'webcam' && videoRef.current && videoRef.current.readyState >= 2) {
+        // We draw the video onto the canvas to allow pixel extraction
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        
+        currentTargets.forEach(target => {
+          if (target.isHuman) {
+            const vector = extractBiometricVectorFromCanvas(canvas, target);
+            const bioMatch = biometricEngine.recognizeFace(vector);
+            target.biometricMatch = bioMatch;
+            target.classificationStatus = bioMatch.isRecognized ? 'KNOWN' : 'ANOMALY';
+            target.isAuthorizedTeamMember = bioMatch.isRecognized;
+            target.isUnknownSubject = !bioMatch.isRecognized;
+            target.color = bioMatch.isRecognized ? '#10b981' : '#ef4444';
+            target.label = bioMatch.isRecognized ? bioMatch.displayText : `⚠ [RED OBJECT] ANOMALY PERSON`;
+          }
+        });
       }
 
       // Render clean C2 military overlay

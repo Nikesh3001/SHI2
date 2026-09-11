@@ -96,13 +96,17 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
 
   const selectedCamera = cameras.find(c => c.id === selectedCameraId) || cameras[0];
 
-  const displayedCameras = layoutMode === '1x1' 
+  const displayedCameras = (layoutMode === '1x1' || globalStreamMode === 'webcam')
+    ? [selectedCamera]
+    : layoutMode === '1x1' 
     ? [selectedCamera]
     : layoutMode === '2x2' 
       ? cameras.slice(0, 4)
       : cameras;
 
-  const gridClass = layoutMode === '1x1' 
+  const gridClass = (layoutMode === '1x1' || globalStreamMode === 'webcam')
+    ? 'grid-cols-1'
+    : layoutMode === '1x1' 
     ? 'grid-cols-1' 
     : layoutMode === '2x2' 
       ? 'grid-cols-1 md:grid-cols-2' 
@@ -138,7 +142,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
               return (
                 <div
                   key={cam.id}
-                  onClick={() => onSelectCamera(cam.id)}
+                  onClick={() => { onSelectCamera(cam.id); if (layoutMode !== '1x1') onLayoutModeChange('1x1'); }}
                   className={`p-2 rounded border cursor-pointer transition-all flex items-center justify-between ${
                     isSelected
                       ? 'bg-slate-800 border-amber-500/80 text-white shadow-sm'
@@ -216,7 +220,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
                 CCTV FEED (1080p)
               </button>
               <button
-                onClick={() => setGlobalStreamMode('webcam')}
+                onClick={() => { setGlobalStreamMode('webcam'); onLayoutModeChange('1x1'); }}
                 className={`px-2.5 py-1 rounded font-bold transition-colors ${
                   globalStreamMode === 'webcam'
                     ? 'bg-slate-800 text-purple-400 border border-slate-700'
@@ -291,7 +295,7 @@ export const CameraGrid: React.FC<CameraGridProps> = ({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.2 }}
-                    onClick={() => onSelectCamera(cam.id)}
+                    onClick={() => { onSelectCamera(cam.id); if (layoutMode !== '1x1') onLayoutModeChange('1x1'); }}
                     className="h-full min-h-[220px]"
                   >
                     <CameraStream

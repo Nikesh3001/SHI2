@@ -12,10 +12,10 @@ import cam08 from '../assets/images/cam_08.jpg';
 export const INITIAL_CAMERAS: Camera[] = [
   {
     id: 'cam-01',
-    name: 'Border Outpost Gate',
+    name: 'Local Biometric Sentry (Webcam)',
     code: 'CAM-01',
     sector: 'Sector Alpha',
-    bopName: 'Gate Checkpoint',
+    bopName: 'HQ Checkpoint',
     type: 'fixed',
     rtspUrl: cam01,
     onvifProfile: 'Profile S',
@@ -30,6 +30,7 @@ export const INITIAL_CAMERAS: Camera[] = [
     altitudeMeters: 412,
     nightVisionSupported: true,
     thermalSupported: false,
+    streamMode: 'webcam',
     virtualFences: [],
     activeDetections: []
   },
