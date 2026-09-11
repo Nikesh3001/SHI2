@@ -1,0 +1,7 @@
+{
+  "name": "IBVAP - Intelligent Border Video Analytics Platform",
+  "description": "AI-driven software-defined border surveillance platform with 6-member team biometric recognition, real-time intrusion detection with red-square stranger tagging, ANPR, and tactical command.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

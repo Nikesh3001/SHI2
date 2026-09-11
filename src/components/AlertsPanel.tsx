@@ -1,0 +1,768 @@
+import React, { useState, useEffect } from 'react';
+import { SecurityAlert, Severity, AlertCategory, Camera } from '../types';
+import { 
+  AlertTriangle, 
+  ShieldAlert, 
+  CheckCircle2, 
+  Truck, 
+  Radio, 
+  Volume2, 
+  Download, 
+  UserCheck, 
+  FileText, 
+  Clock, 
+  MapPin, 
+  Crosshair,
+  Filter,
+  Check,
+  Zap,
+  ExternalLink,
+  BrainCircuit,
+  Loader2,
+  RefreshCw,
+  Map as MapIcon,
+  Search as SearchIcon,
+  FileDown,
+  Printer,
+  Eye,
+  X,
+  ShieldCheck,
+  Camera as CameraIcon
+} from 'lucide-react';
+import { tacticalAudio } from '../utils/audio';
+import { downloadIntelligenceReport, createTacticalSnapshot } from '../utils/intelligenceReportPdf';
+
+interface AlertsPanelProps {
+  alerts: SecurityAlert[];
+  cameras: Camera[];
+  onAcknowledgeAlert: (alertId: string, officerName: string) => void;
+  onDispatchQrf: (alertId: string, unitName: string) => void;
+  onExportDossier: (alert: SecurityAlert) => void;
+  onSelectCameraFeed?: (cameraId: string) => void;
+}
+
+export const AlertsPanel: React.FC<AlertsPanelProps> = ({
+  alerts,
+  cameras,
+  onAcknowledgeAlert,
+  onDispatchQrf,
+  onExportDossier,
+  onSelectCameraFeed,
+}) => {
+  const [selectedAlertId, setSelectedAlertId] = useState<string>(alerts[0]?.id || '');
+  const [severityFilter, setSeverityFilter] = useState<'ALL' | Severity>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'NEW' | 'ACKNOWLEDGED' | 'DISPATCHED' | 'RESOLVED'>('ALL');
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [actionErrorMsg, setActionErrorMsg] = useState<string | null>(null);
+
+  const [isAssessing, setIsAssessing] = useState(false);
+  const [assessments, setAssessments] = useState<Record<string, { maps: string, search: string }>>({});
+  
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [previewReportAlert, setPreviewReportAlert] = useState<SecurityAlert | null>(null);
+  const [previewSnapshotUrl, setPreviewSnapshotUrl] = useState<string | null>(null);
+  const [activeSnapshotUrl, setActiveSnapshotUrl] = useState<string | null>(null);
+
+  const activeAlert = alerts.find(a => a.id === selectedAlertId) || alerts[0];
+
+  // Pre-load tactical camera snapshot for the currently selected alert
+  useEffect(() => {
+    let isMounted = true;
+    if (activeAlert) {
+      const camera = cameras.find(c => c.id === activeAlert.cameraId);
+      createTacticalSnapshot(activeAlert.snapshotUrl, camera, activeAlert).then(url => {
+        if (isMounted) setActiveSnapshotUrl(url);
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [activeAlert?.id, activeAlert?.cameraId, cameras]);
+
+  const handleGenerateIntelligenceReport = async (alertToReport?: SecurityAlert) => {
+    const targetAlert = alertToReport || activeAlert;
+    if (!targetAlert) return;
+
+    tacticalAudio.playRadioChirp();
+    setIsGeneratingReport(true);
+    try {
+      const camera = cameras.find(c => c.id === targetAlert.cameraId);
+      const assessment = assessments[targetAlert.id];
+      
+      const filename = await downloadIntelligenceReport({
+        alert: targetAlert,
+        camera,
+        assessment,
+        reportingOfficer: 'Officer In-Charge Capt. Verma',
+        commandUnit: 'QRF Alpha-1 (Striker) - Sector Command'
+      });
+
+      // Prepare snapshot for preview briefing modal
+      const snapshot = await createTacticalSnapshot(targetAlert.snapshotUrl, camera, targetAlert);
+      setPreviewSnapshotUrl(snapshot);
+      setPreviewReportAlert(targetAlert);
+
+      setActionSuccessMsg(`📄 Official Intelligence Report generated: ${filename}`);
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    } catch (err) {
+      console.error('Failed to generate intelligence report:', err);
+      setActionErrorMsg('Failed to generate Intelligence Report PDF. Please retry.');
+      setTimeout(() => setActionErrorMsg(null), 5000);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const filteredAlerts = alerts.filter(a => {
+    const matchSev = severityFilter === 'ALL' || a.severity === severityFilter;
+    const matchStatus = statusFilter === 'ALL' || a.status === statusFilter;
+    return matchSev && matchStatus;
+  });
+
+  const handleDispatch = (alert: SecurityAlert) => {
+    tacticalAudio.playRadioChirp();
+    onDispatchQrf(alert.id, 'QRF Alpha-1 (Striker)');
+    setActionSuccessMsg(`🚨 QRF Striker-1 Dispatched to ${alert.bopName} on VHF Channel 4!`);
+    setTimeout(() => setActionSuccessMsg(null), 4000);
+  };
+
+  const handleGenerateAssessment = async () => {
+    if (!activeAlert) return;
+    const camera = cameras.find(c => c.id === activeAlert.cameraId);
+    if (!camera || !camera.lat || !camera.lng) {
+      setActionErrorMsg("Geographical coordinates not available for this camera outpost.");
+      setTimeout(() => setActionErrorMsg(null), 4000);
+      return;
+    }
+    
+    setIsAssessing(true);
+    try {
+      const res = await fetch('/api/threat-assessment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alert: activeAlert, camera }),
+      });
+      const data = await res.json();
+      setAssessments(prev => ({
+        ...prev,
+        [activeAlert.id]: {
+          maps: data.geospatialAnalysis,
+          search: data.intelBrief
+        }
+      }));
+      setActionSuccessMsg("AI Threat Assessment generated successfully.");
+      setTimeout(() => setActionSuccessMsg(null), 4000);
+    } catch (e) {
+      console.error(e);
+      setActionErrorMsg("Failed to generate assessment. Ensure Gemini API Key is configured.");
+      setTimeout(() => setActionErrorMsg(null), 5000);
+    } finally {
+      setIsAssessing(false);
+    }
+  };
+
+  const handleAcknowledge = (alert: SecurityAlert) => {
+    tacticalAudio.playRadioChirp();
+    onAcknowledgeAlert(alert.id, 'Officer In-Charge Capt. Verma');
+    setActionSuccessMsg(`✅ Incident ${alert.eventId} marked ACKNOWLEDGED.`);
+    setTimeout(() => setActionSuccessMsg(null), 3000);
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-3 h-full select-none">
+      {/* Left List of Security Alerts */}
+      <div className="w-full lg:w-96 shrink-0 bg-slate-900/60 border border-slate-800 rounded-lg p-3 flex flex-col gap-3">
+        {/* Filter Headers */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-mono-code font-bold text-slate-200">
+            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            <span>INCIDENT FEED ({filteredAlerts.length})</span>
+          </div>
+
+          {/* Severity filter */}
+          <select
+            value={severityFilter}
+            onChange={(e) => setSeverityFilter(e.target.value as any)}
+            className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] font-mono-code text-slate-300 focus:outline-none"
+          >
+            <option value="ALL">ALL SEVERITIES</option>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="HIGH">HIGH</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="LOW">LOW</option>
+          </select>
+        </div>
+
+        {/* Status Pills */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 text-[10px] font-mono-code">
+          {(['ALL', 'NEW', 'ACKNOWLEDGED', 'DISPATCHED', 'RESOLVED'] as const).map(st => (
+            <button
+              key={st}
+              onClick={() => setStatusFilter(st)}
+              className={`px-2 py-0.5 rounded transition-colors whitespace-nowrap ${
+                statusFilter === st 
+                  ? 'bg-amber-500/20 border border-amber-500/50 text-amber-300 font-bold' 
+                  : 'bg-slate-950 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+
+        {/* Action toast notification */}
+        {actionSuccessMsg && (
+          <div className="p-2 rounded bg-amber-500/20 border border-amber-500/60 text-amber-200 text-xs font-mono-code animate-pulse">
+            {actionSuccessMsg}
+          </div>
+        )}
+
+        {/* Alerts Scrollable Feed */}
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[550px]">
+          {filteredAlerts.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-xs font-mono-code">
+              No security alerts matching criteria.
+            </div>
+          ) : (
+            filteredAlerts.map(alert => {
+              const isSelected = alert.id === activeAlert?.id;
+              const isCritical = alert.severity === 'CRITICAL';
+              const isHigh = alert.severity === 'HIGH';
+
+              return (
+                <div
+                  key={alert.id}
+                  onClick={() => setSelectedAlertId(alert.id)}
+                  className={`p-2.5 rounded-md border cursor-pointer transition-all flex flex-col gap-1.5 ${
+                    isSelected
+                      ? 'bg-slate-800/90 border-amber-400 shadow-md shadow-amber-500/10'
+                      : isCritical && alert.status === 'NEW'
+                        ? 'bg-red-950/40 border-red-800/80 hover:border-red-600'
+                        : 'bg-slate-950/70 border-slate-800/80 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-mono-code">
+                    <span className="text-slate-400 font-semibold">{alert.eventId}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      isCritical ? 'bg-red-500/20 text-red-400 border border-red-500/40' :
+                      isHigh ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40' :
+                      'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                    }`}>
+                      {alert.severity}
+                    </span>
+                  </div>
+
+                  <div className="text-xs font-semibold text-slate-200 line-clamp-1">
+                    {alert.detectedObject}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono-code">
+                    <span className="truncate max-w-[160px]">{alert.bopName}</span>
+                    <span className="text-amber-400">{alert.timestamp}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px] font-mono-code">
+                    <span className="text-slate-500">{alert.category}</span>
+                    <span className={`font-semibold ${
+                      alert.status === 'NEW' ? 'text-red-400 animate-pulse' :
+                      alert.status === 'DISPATCHED' ? 'text-blue-400' :
+                      alert.status === 'ACKNOWLEDGED' ? 'text-amber-400' :
+                      'text-emerald-400'
+                    }`}>
+                      ● {alert.status}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Right Column: Detailed Incident Examination & Triage Dossier */}
+      {activeAlert && (
+        <div className="flex-1 bg-slate-900/60 border border-slate-800 rounded-lg p-4 flex flex-col gap-4 overflow-y-auto">
+          {/* Action Notifications */}
+          {actionSuccessMsg && (
+            <div className="px-3.5 py-2 rounded bg-emerald-950/80 border border-emerald-700 text-emerald-300 text-xs font-mono-code flex items-center justify-between shadow-sm">
+              <span>{actionSuccessMsg}</span>
+              <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-400 hover:text-white ml-2 text-sm">✕</button>
+            </div>
+          )}
+          {actionErrorMsg && (
+            <div className="px-3.5 py-2 rounded bg-red-950/80 border border-red-700 text-red-300 text-xs font-mono-code flex items-center justify-between shadow-sm">
+              <span>{actionErrorMsg}</span>
+              <button onClick={() => setActionErrorMsg(null)} className="text-red-400 hover:text-white ml-2 text-sm">✕</button>
+            </div>
+          )}
+
+          {/* Incident Dossier Header */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono-code text-slate-400">INCIDENT DOSSIER:</span>
+                <span className="text-sm font-bold font-mono-code text-amber-400">{activeAlert.eventId}</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono-code font-bold ${
+                  activeAlert.severity === 'CRITICAL' ? 'bg-red-500/20 text-red-300 border border-red-500/50' :
+                  'bg-orange-500/20 text-orange-300 border border-orange-500/50'
+                }`}>
+                  {activeAlert.severity} PRIORITY
+                </span>
+              </div>
+              <h2 className="text-base font-bold text-slate-100 mt-1">
+                {activeAlert.detectedObject}
+              </h2>
+            </div>
+
+            {/* Header Action Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-generate-intel-report-header"
+                onClick={() => handleGenerateIntelligenceReport(activeAlert)}
+                disabled={isGeneratingReport}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-mono-code transition-all shadow-md shadow-amber-500/20 active:scale-95 disabled:opacity-50"
+                title="Compile current event data, timestamp, telemetry, and camera snapshots into a downloadable official command briefing PDF"
+              >
+                {isGeneratingReport ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Compiling PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-3.5 h-3.5" />
+                    <span>Generate Intelligence Report</span>
+                  </>
+                )}
+              </button>
+
+              {/* Jump to Camera Feed */}
+              {onSelectCameraFeed && (
+                <button
+                  onClick={() => onSelectCameraFeed(activeAlert.cameraId)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-mono-code transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Jump to Live Stream</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Incident Metadata Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono-code">
+            <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded">
+              <div className="text-[10px] text-slate-500 uppercase">Detection Sector</div>
+              <div className="font-bold text-slate-200 truncate mt-0.5">{activeAlert.bopName}</div>
+              <div className="text-[10px] text-slate-400 truncate">{activeAlert.sector}</div>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded">
+              <div className="text-[10px] text-slate-500 uppercase">Detection Time</div>
+              <div className="font-bold text-amber-300 mt-0.5">{activeAlert.timestamp} UTC</div>
+              <div className="text-[10px] text-slate-400">Clip: {activeAlert.videoClipDurationSecs}s buffered</div>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded">
+              <div className="text-[10px] text-slate-500 uppercase">AI Model Confidence</div>
+              <div className="font-bold text-emerald-400 mt-0.5">{(activeAlert.confidence * 100).toFixed(1)}%</div>
+              <div className="text-[10px] text-slate-400">ByteTrack + YOLOv8</div>
+            </div>
+
+            <div className="bg-slate-950/80 border border-slate-800 p-2.5 rounded">
+              <div className="text-[10px] text-slate-500 uppercase">Tamper-Evident SHA-256</div>
+              <div className="font-bold text-slate-300 truncate mt-0.5" title={activeAlert.tamperHash}>
+                {activeAlert.tamperHash.slice(0, 12)}...
+              </div>
+              <div className="text-[10px] text-emerald-400">Verified Evidence Hash</div>
+            </div>
+          </div>
+
+          {/* Forensic Surveillance Snapshot & Optical Evidence */}
+          <div className="bg-slate-950/90 border border-slate-800 rounded-lg p-3 flex flex-col md:flex-row gap-3 items-stretch">
+            <div className="relative w-full md:w-80 shrink-0 bg-slate-900 rounded overflow-hidden border border-slate-800 flex items-center justify-center min-h-[160px]">
+              {activeSnapshotUrl ? (
+                <img 
+                  src={activeSnapshotUrl} 
+                  alt={`Camera snapshot for ${activeAlert.eventId}`}
+                  className="w-full h-full object-cover" 
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-slate-500 text-xs font-mono-code gap-1 py-8">
+                  <CameraIcon className="w-6 h-6 animate-pulse text-amber-400/60" />
+                  <span>Loading Optical Snapshot...</span>
+                </div>
+              )}
+              {/* OSD Status Tag */}
+              <div className="absolute top-2 left-2 bg-slate-950/80 border border-slate-700 px-1.5 py-0.5 rounded text-[10px] font-mono-code text-amber-300 font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                <span>REC EVIDENCE</span>
+              </div>
+              <div className="absolute bottom-2 right-2 bg-slate-950/80 px-1.5 py-0.5 rounded text-[9px] font-mono-code text-slate-300">
+                {activeAlert.timestamp} UTC
+              </div>
+            </div>
+
+            <div className="flex-1 flex flex-col justify-between gap-2 text-xs font-mono-code">
+              <div>
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px]">
+                  <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>FORENSIC CAMERA SNAPSHOT & OPTICAL EVIDENCE</span>
+                  </span>
+                  <span className="text-emerald-400 font-semibold text-[10px]">INTEGRITY VERIFIED</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-2 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Assigned Sensor</span>
+                    <span className="text-slate-200 font-bold truncate block">{activeAlert.cameraName}</span>
+                    <span className="text-[10px] text-slate-400">{activeAlert.cameraId}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Location / Outpost</span>
+                    <span className="text-amber-300 font-bold truncate block">{activeAlert.bopName}</span>
+                    <span className="text-[10px] text-slate-400">{activeAlert.sector}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Target Classification</span>
+                    <span className="text-red-400 font-bold block">COCO-01 (Person) Verified</span>
+                    <span className="text-[10px] text-slate-400">1-to-1 MOT Track Assigned</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Evidence SHA-256</span>
+                    <span className="text-slate-300 font-mono truncate block" title={activeAlert.tamperHash}>
+                      {activeAlert.tamperHash.slice(0, 16)}...
+                    </span>
+                    <span className="text-[10px] text-emerald-400">Tamper-Proof Seal</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                <button
+                  id="btn-intel-report-snapshot-card"
+                  onClick={() => handleGenerateIntelligenceReport(activeAlert)}
+                  disabled={isGeneratingReport}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all active:scale-95 disabled:opacity-50"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Download Intelligence Report (PDF)</span>
+                </button>
+                {activeSnapshotUrl && (
+                  <button
+                    onClick={() => {
+                      setPreviewReportAlert(activeAlert);
+                      setPreviewSnapshotUrl(activeSnapshotUrl);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs transition-colors"
+                    title="Preview Official Command Briefing"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-400" />
+                    <span>View Briefing Preview</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* AI Correlation Rule Engine Details */}
+          <div className="bg-slate-950/80 border border-amber-500/30 rounded p-3 text-xs font-mono-code">
+            <div className="flex items-center gap-2 text-amber-400 font-bold mb-1">
+              <Zap className="w-4 h-4" />
+              <span>CORRELATED EVENT TRIGGER & RULE EVALUATION</span>
+            </div>
+            <div className="text-slate-200 font-semibold mb-1">
+              {activeAlert.ruleTriggered}
+            </div>
+            <p className="text-slate-400 font-sans text-xs leading-relaxed">
+              {activeAlert.details}
+            </p>
+          </div>
+
+          {/* AI Threat Assessment Module */}
+          <div className="bg-indigo-950/20 border border-indigo-500/30 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold font-mono-code text-xs">
+                <BrainCircuit className="w-4 h-4" />
+                <span>AI TACTICAL THREAT ASSESSMENT</span>
+              </div>
+              <button 
+                onClick={handleGenerateAssessment}
+                disabled={isAssessing}
+                className="flex items-center gap-1.5 px-2 py-1 bg-indigo-900/40 hover:bg-indigo-900/60 border border-indigo-500/50 rounded text-[10px] font-mono-code text-indigo-200 transition-colors disabled:opacity-50"
+              >
+                {isAssessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span>{assessments[activeAlert.id] ? "RE-ASSESS" : "GENERATE"}</span>
+              </button>
+            </div>
+            
+            {isAssessing ? (
+              <div className="py-6 flex flex-col items-center justify-center text-indigo-400/70 font-mono-code text-xs">
+                <Loader2 className="w-6 h-6 animate-spin mb-2" />
+                <span>Running Geospatial & Intel Analysis...</span>
+                <span className="text-[9px] mt-1 opacity-70">Querying Google Maps & Search Grounding</span>
+              </div>
+            ) : assessments[activeAlert.id] ? (
+              <div className="flex flex-col gap-3 font-mono-code text-xs">
+                <div className="bg-slate-900/80 border border-slate-700/50 rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1 text-sky-400 font-bold border-b border-slate-700/50 pb-1">
+                    <MapIcon className="w-3.5 h-3.5" />
+                    <span>GEOSPATIAL TERRAIN ANALYSIS</span>
+                  </div>
+                  <div className="text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-xs">
+                    {assessments[activeAlert.id].maps}
+                  </div>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-700/50 rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1 text-amber-400 font-bold border-b border-slate-700/50 pb-1">
+                    <SearchIcon className="w-3.5 h-3.5" />
+                    <span>LATEST CONTEXTUAL INTEL</span>
+                  </div>
+                  <div className="text-slate-300 leading-relaxed whitespace-pre-wrap font-sans text-xs">
+                    {assessments[activeAlert.id].search}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="py-4 text-center text-indigo-300/50 text-[11px] font-mono-code bg-slate-950/50 rounded border border-slate-800/50 border-dashed">
+                No active assessment for this incident. Click GENERATE to analyze.
+              </div>
+            )}
+          </div>
+
+          {/* Operational SOP Action Buttons */}
+          <div className="bg-slate-950/80 border border-slate-800 rounded p-3 flex flex-col gap-3 font-mono-code text-xs">
+            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+              COMMAND RESPONSE STANDARD OPERATING PROCEDURES (SOP)
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <button
+                onClick={() => handleDispatch(activeAlert)}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-red-600 hover:bg-red-500 text-white font-bold transition-all shadow-md active:scale-95"
+              >
+                <Truck className="w-4 h-4" />
+                <span>Dispatch QRF Unit</span>
+              </button>
+
+              <button
+                onClick={() => handleAcknowledge(activeAlert)}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-all shadow-md active:scale-95"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Acknowledge Event</span>
+              </button>
+
+              <button
+                id="btn-sop-generate-intel-report"
+                onClick={() => handleGenerateIntelligenceReport(activeAlert)}
+                disabled={isGeneratingReport}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold transition-all shadow-md active:scale-95 disabled:opacity-50"
+              >
+                {isGeneratingReport ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                    <span>Compiling PDF...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileDown className="w-4 h-4 text-amber-400" />
+                    <span>Generate Intel Report (PDF)</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  tacticalAudio.playAlertSound('CRITICAL');
+                  setActionSuccessMsg(`🔊 Engaged high-intensity acoustic perimeter warning at ${activeAlert.bopName}!`);
+                  setTimeout(() => setActionSuccessMsg(null), 4000);
+                }}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold transition-all"
+              >
+                <Volume2 className="w-4 h-4 text-red-400" />
+                <span>Perimeter Horn</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Audit History & Officer Acknowledgement Notes */}
+          {activeAlert.acknowledgedBy && (
+            <div className="p-2.5 rounded bg-emerald-950/20 border border-emerald-800/40 text-xs font-mono-code text-slate-300">
+              <div className="text-emerald-400 font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Acknowledged by: {activeAlert.acknowledgedBy}</span>
+              </div>
+              {activeAlert.actionTaken && (
+                <div className="mt-1 text-slate-400">
+                  Action Taken: {activeAlert.actionTaken}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Official Command Briefing Preview Modal */}
+      {previewReportAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span className="text-xs font-mono-code font-bold text-red-400 tracking-wider">
+                  TOP SECRET // NOFORN // COMMAND BRIEFING PREVIEW
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  id="btn-modal-download-pdf"
+                  onClick={() => handleGenerateIntelligenceReport(previewReportAlert)}
+                  disabled={isGeneratingReport}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs font-mono-code transition-colors disabled:opacity-50"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Download PDF</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-mono-code transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+                <button
+                  onClick={() => setPreviewReportAlert(null)}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content / Briefing Sheet */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 font-sans bg-slate-950/60 text-slate-200">
+              {/* Classification Title Banner */}
+              <div className="border-b-2 border-red-600 pb-3">
+                <div className="text-[10px] font-mono-code text-red-400 uppercase tracking-widest font-bold">
+                  IBVAP Joint Defense & Security Command Operations
+                </div>
+                <h1 className="text-lg md:text-xl font-bold text-slate-100 mt-0.5">
+                  TACTICAL INTELLIGENCE & INCIDENT ACTION REPORT (IAB)
+                </h1>
+                <div className="flex flex-wrap items-center gap-4 text-xs font-mono-code text-slate-400 mt-1">
+                  <span>REF: <strong className="text-amber-400">{previewReportAlert.eventId}</strong></span>
+                  <span>RECORDED: <strong className="text-slate-200">{previewReportAlert.timestamp} UTC</strong></span>
+                  <span>SECTOR: <strong className="text-slate-200">{previewReportAlert.sector} ({previewReportAlert.bopName})</strong></span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                    {previewReportAlert.severity} PRIORITY
+                  </span>
+                </div>
+              </div>
+
+              {/* Snapshot and Optical Telemetry Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden relative">
+                  {previewSnapshotUrl ? (
+                    <img
+                      src={previewSnapshotUrl}
+                      alt="Surveillance snapshot"
+                      className="w-full h-auto object-cover max-h-[300px]"
+                    />
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-slate-500 font-mono-code text-xs">
+                      Loading optical frame...
+                    </div>
+                  )}
+                  <div className="absolute top-2 left-2 bg-slate-950/80 px-2 py-0.5 rounded text-[10px] font-mono-code text-amber-300 border border-slate-700">
+                    FORENSIC OPTICAL FRAME
+                  </div>
+                </div>
+
+                {/* Telemetry Summary */}
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-3 text-xs font-mono-code space-y-2">
+                  <div className="text-[11px] font-bold text-amber-400 border-b border-slate-800 pb-1 uppercase">
+                    Optical Sensor Telemetry
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Sensor Code</span>
+                    <span className="text-slate-200 font-bold">{previewReportAlert.cameraId}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Target Classification</span>
+                    <span className="text-emerald-400 font-bold">COCO-01 (Person)</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">AI Verification</span>
+                    <span className="text-slate-200">{(previewReportAlert.confidence * 100).toFixed(1)}% ByteTrack MOT</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Tamper Hash (SHA-256)</span>
+                    <span className="text-slate-400 text-[9px] break-all font-mono">{previewReportAlert.tamperHash}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Narrative & Rules */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 text-xs">
+                <div className="font-mono-code font-bold text-amber-400 text-[11px] mb-1">
+                  RULE TRIGGER & CHRONOLOGICAL INCIDENT NARRATIVE
+                </div>
+                <div className="font-mono-code text-slate-300 font-semibold mb-1">
+                  {previewReportAlert.ruleTriggered}
+                </div>
+                <p className="text-slate-400 leading-relaxed text-xs">
+                  {previewReportAlert.details}
+                </p>
+              </div>
+
+              {/* Assessment summary if present */}
+              {assessments[previewReportAlert.id] && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono-code">
+                  <div className="bg-slate-900/60 border border-sky-500/30 rounded p-2.5">
+                    <div className="text-sky-400 font-bold mb-1">GEOSPATIAL TERRAIN ANALYSIS</div>
+                    <div className="text-slate-300 text-[11px] font-sans leading-relaxed">
+                      {assessments[previewReportAlert.id].maps}
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/60 border border-amber-500/30 rounded p-2.5">
+                    <div className="text-amber-400 font-bold mb-1">CONTEXTUAL INTEL</div>
+                    <div className="text-slate-300 text-[11px] font-sans leading-relaxed">
+                      {assessments[previewReportAlert.id].search}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Command Sign-off */}
+              <div className="border-t border-slate-800 pt-3 flex flex-wrap items-center justify-between text-xs font-mono-code text-slate-400">
+                <div>
+                  <span className="text-slate-500 block text-[10px]">ELECTRONIC SIGNATURE</span>
+                  <span className="text-slate-200 font-bold">Officer In-Charge Capt. Verma</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-500 block text-[10px]">CLASSIFICATION AUTHORITY</span>
+                  <span className="text-emerald-400 font-bold">SECTOR COMMAND DISPATCH VERIFIED</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-950 px-4 py-3 border-t border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] font-mono-code text-slate-500">
+                Official Law Enforcement & Military Operational Document
+              </span>
+              <button
+                onClick={() => setPreviewReportAlert(null)}
+                className="px-4 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono-code transition-colors"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
