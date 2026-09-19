@@ -86,7 +86,7 @@ export const AnprFrsView: React.FC<AnprFrsViewProps> = ({
   const handleSaveVehicle = () => {
     if (!newPlate) return;
     const vehicle: HotlistVehicle = {
-      id: `veh-${Date.now()}`,
+      id: `veh-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       plateNumber: newPlate,
       stateCode: newPlate.substring(0, 2),
       vehicleType: newVehicleModel,
@@ -105,7 +105,7 @@ export const AnprFrsView: React.FC<AnprFrsViewProps> = ({
   const handleSaveSubject = () => {
     if (!newName) return;
     const subject: WatchlistSubject = {
-      id: `sub-${Date.now()}`,
+      id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: newName,
       alias: newAlias,
       category: newThreat === 'CRITICAL' ? 'WANTED' : 'SUSPECT',
@@ -126,7 +126,7 @@ export const AnprFrsView: React.FC<AnprFrsViewProps> = ({
   const handleSavePublicCamera = () => {
     if (!newCamName || !newCamUrl) return;
     const camera: PublicCameraBookmark = {
-      id: `pub-${Date.now()}`,
+      id: `pub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: newCamName,
       streamUrl: newCamUrl,
       location: newCamLocation,

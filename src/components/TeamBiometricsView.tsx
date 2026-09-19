@@ -3,7 +3,7 @@ import {
   ShieldCheck, 
   ShieldAlert, 
   UserCheck, 
-  UserX, 
+  UserX, Activity, 
   Cpu, 
   Camera as CameraIcon, 
   Upload, 
@@ -23,7 +23,8 @@ import {
   Settings
 } from 'lucide-react';
 import { AuthorizedTeamMember, Camera } from '../types';
-import { createOpticalMotionTracker } from '../utils/webcamVision';
+import { TemporalTrackingBuffer } from '../utils/temporalTracker';
+import { initAiVisionModel, detectObjects } from '../utils/aiVisionEngine';
 import { renderTacticalSimulation } from '../utils/canvasRenderer';
 import { 
   biometricEngine, 
@@ -108,8 +109,11 @@ export const TeamBiometricsView: React.FC<TeamBiometricsViewProps> = ({
   };
 
 const trackerRef = useRef<any>(null);
+  const lastTrackResultRef = useRef<any>(null);
+  const isProcessingRef = useRef(false);
+  useEffect(() => { initAiVisionModel(); }, []);
   if (!trackerRef.current) {
-    trackerRef.current = createOpticalMotionTracker();
+    trackerRef.current = new TemporalTrackingBuffer();
   }
 
   // Live Camera Scan Loop
@@ -118,36 +122,45 @@ const trackerRef = useRef<any>(null);
     let scanInterval: any;
 
     if (isLiveChamberActive && webcamStream) {
-      scanInterval = setInterval(() => {
-        if (!videoRef.current || !canvasRef.current) return;
+      let lastScanTime = performance.now();
+      scanInterval = setInterval(async () => {
+        if (!videoRef.current || !canvasRef.current || isProcessingRef.current) return;
         const video = videoRef.current;
         const canvas = canvasRef.current;
         if (video.readyState < 2) return;
 
+        isProcessingRef.current = true;
+        
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) { isProcessingRef.current = false; return; }
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Process frame for multiple objects and people
-        const trackResult = trackerRef.current.processFrame(video, [], 22, undefined, { personOnly: false, allowedClasses: [] });
+        // Process frame for multiple objects using true YOLO AI
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - lastScanTime) / 1000);
+        lastScanTime = now;
+        
+        const observations = await detectObjects(video);
+        const trackResult = trackerRef.current.update(observations, dt, [], { personOnly: false, allowedClasses: [] });
+        lastTrackResultRef.current = trackResult;
         
         let primaryResult: any = null;
 
         trackResult.targets.forEach((target: any) => {
           if (target.isHuman) {
              const vector = extractBiometricVectorFromCanvas(canvas, target);
-             const bioMatch = biometricEngine.recognizeFace(vector);
+             const bioMatch = biometricEngine.recognizeFace(vector, undefined, target.trackId);
              target.biometricMatch = bioMatch;
              target.classificationStatus = bioMatch.isRecognized ? 'KNOWN' : 'ANOMALY';
              target.isAuthorizedTeamMember = bioMatch.isRecognized;
              target.isUnknownSubject = !bioMatch.isRecognized;
              target.color = bioMatch.isRecognized ? '#10b981' : '#ef4444';
              target.label = bioMatch.isRecognized ? bioMatch.displayText : `⚠ [RED OBJECT] ANOMALY PERSON`;
-             
              if (!primaryResult) primaryResult = bioMatch;
+
           }
         });
 
@@ -253,8 +266,27 @@ const trackerRef = useRef<any>(null);
 
   // Quick enroll current webcam face to an authorized member
   const handleEnrollCurrentWebcamFaceToMember = (memberId: string) => {
-    if (!canvasRef.current) return;
-    const vector = extractBiometricVectorFromCanvas(canvasRef.current);
+    if (!canvasRef.current || !trackerRef.current) return;
+    
+    // Find the largest target currently tracked to extract features from
+    // We run one synchronous frame process to get the current targets
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return;
+    // We just take the last known targets from the buffer
+    const trackResult = lastTrackResultRef.current || { targets: [] };
+    
+    let bestTarget = null;
+    let maxArea = 0;
+    trackResult.targets.forEach(t => {
+      const area = t.w * t.h;
+      if (area > maxArea) {
+         maxArea = area;
+         bestTarget = t;
+      }
+    });
+    
+    const vector = extractBiometricVectorFromCanvas(canvasRef.current, bestTarget || undefined);
+    
     const target = members.find(m => m.id === memberId);
     if (!target) return;
 
@@ -814,6 +846,56 @@ const trackerRef = useRef<any>(null);
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Sensor Fusion Pipeline Diagram */}
+        <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-4 shadow-xl overflow-hidden relative">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-200 uppercase mb-4">
+            <Activity className="w-4 h-4 text-emerald-400" />
+            <span>Active Sensor Fusion Pipeline (Dynamic Object Discrimination)</span>
+          </div>
+          
+          <div className="relative flex flex-col md:flex-row items-center justify-between gap-6 font-mono-code text-[11px]">
+            {/* Background connection lines (desktop) */}
+            <div className="hidden md:block absolute top-1/2 left-20 right-20 h-px bg-slate-700 -z-10 border-t border-dashed border-slate-600" />
+            
+            {/* Stream 1: CCTV + YOLO */}
+            <div className="flex flex-col items-center bg-slate-800/80 border border-slate-600 rounded-lg p-3 w-48 shadow-lg z-10 relative">
+              <div className="absolute -right-3 top-1/2 w-3 h-0.5 bg-blue-500 animate-pulse hidden md:block"></div>
+              <span className="text-blue-400 font-bold mb-1 border-b border-blue-900/50 pb-1 w-full text-center">OPTICAL FEED</span>
+              <div className="flex items-center gap-2">
+                <span className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300">CCTV</span>
+                <span className="text-slate-500">→</span>
+                <span className="bg-blue-900/40 border border-blue-500/30 px-1.5 py-0.5 rounded text-blue-300">YOLO</span>
+              </div>
+              <div className="text-slate-500 my-1">↓</div>
+              <span className="bg-emerald-900/30 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded font-bold w-full text-center">PERSON</span>
+            </div>
+            
+            {/* Stream 2: LiDAR + Dynamic */}
+            <div className="flex flex-col items-center bg-slate-800/80 border border-slate-600 rounded-lg p-3 w-48 shadow-lg z-10 relative">
+              <div className="absolute -right-3 top-1/2 w-3 h-0.5 bg-amber-500 animate-pulse hidden md:block"></div>
+              <span className="text-amber-400 font-bold mb-1 border-b border-amber-900/50 pb-1 w-full text-center">SPATIAL FEED</span>
+              <div className="flex items-center gap-2">
+                <span className="bg-slate-900 px-1.5 py-0.5 rounded text-slate-300">LiDAR</span>
+                <span className="text-slate-500">→</span>
+                <span className="bg-amber-900/40 border border-amber-500/30 px-1.5 py-0.5 rounded text-amber-300">DYNAMIC</span>
+              </div>
+              <div className="text-slate-500 my-1">↓</div>
+              <span className="bg-emerald-900/30 border border-emerald-500/30 text-emerald-400 px-2 py-1 rounded font-bold w-full text-center">MOVING</span>
+            </div>
+            
+            {/* Fusion Node */}
+            <div className="flex flex-col items-center bg-emerald-900/20 border border-emerald-500/50 rounded-lg p-3 w-56 shadow-[0_0_15px_rgba(16,185,129,0.15)] z-10">
+              <span className="text-emerald-400 font-bold mb-2 border-b border-emerald-900 pb-1 w-full text-center flex items-center justify-center gap-2">
+                <Cpu className="w-3.5 h-3.5" />
+                FUSION ENGINE
+              </span>
+              <div className="bg-emerald-500/20 text-emerald-300 border border-emerald-400 px-3 py-1.5 rounded-sm font-bold tracking-widest text-center shadow-[0_0_10px_rgba(16,185,129,0.3)] animate-pulse w-full">
+                MOVING PERSON
+              </div>
+            </div>
           </div>
         </div>
 

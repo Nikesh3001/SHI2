@@ -215,7 +215,7 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
       }
 
       // Detect distinct horizontal clusters
-      const minColThreshold = procHeight * 0.06;
+      const minColThreshold = procHeight * 0.01; // Drastically lower threshold to catch small motions
       const rawClusters: Array<{ startX: number; endX: number; peakX: number; mass: number }> = [];
       let inCluster = false;
       let clusterStart = 0;
@@ -242,7 +242,7 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
           if (inCluster) {
             inCluster = false;
             const clusterWidth = x - clusterStart;
-            if (clusterWidth >= 8 && clusterMass > minColThreshold * 8) {
+            if (clusterWidth >= 3 && clusterMass > minColThreshold * 3) {
               rawClusters.push({ startX: clusterStart, endX: x, peakX, mass: clusterMass });
             }
           }
@@ -251,7 +251,7 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
 
       if (inCluster) {
         const clusterWidth = procWidth - clusterStart;
-        if (clusterWidth >= 8 && clusterMass > minColThreshold * 8) {
+        if (clusterWidth >= 3 && clusterMass > minColThreshold * 3) {
           rawClusters.push({ startX: clusterStart, endX: procWidth - 1, peakX, mass: clusterMass });
         }
       }
@@ -318,7 +318,7 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
         }
 
         // Noise suppression: Ignore tiny desk movements
-        if (clusterPixelCount < 40 || maxY <= minY || (maxY - minY + 1) < 12) {
+        if (clusterPixelCount < 10 || maxY <= minY || (maxY - minY + 1) < 5) {
           continue;
         }
 
@@ -361,15 +361,18 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
         }
 
         const skinRatio = sampledPixels > 0 ? (skinPixelCount / sampledPixels) : 0;
-        const hasHumanSkin = skinRatio > 0.08;
-        const isVerticallyElongated = (pixelHeight / pixelWidth) >= 1.15;
-        const hasHumanHeight = ph >= 20;
+        const hasHumanSkin = skinRatio > 0.01; // Relaxed skin requirement
+        const isVerticallyElongated = (pixelHeight / pixelWidth) >= 0.7; // Relaxed aspect ratio
+        const hasHumanHeight = ph >= 12; // Relaxed height
 
-        const isPerson = Boolean(faceMatch) || (hasHumanSkin && isVerticallyElongated && hasHumanHeight);
+        // Dynamic distinction between PERSON and OBJECT
+        // A person is typically vertically elongated or has skin tone, or is a large moving mass.
+        // A small, non-elongated moving mass is an OBJECT (e.g., cup, backpack, drone).
+        const isPerson = Boolean(faceMatch) || (hasHumanHeight && (hasHumanSkin || isVerticallyElongated || clusterPixelCount > 400));
 
         if (isPerson) {
-          pw = Math.max(14, Math.min(38, pw));
-          ph = Math.max(26, Math.min(94, ph));
+          pw = Math.max(8, Math.min(70, pw));
+          ph = Math.max(15, Math.min(98, ph));
           const adjustedX = Math.max(0, Math.min(100 - pw, cx - pw / 2));
           const adjustedY = Math.max(0, Math.min(100 - ph, cy - ph / 2));
 
@@ -392,7 +395,7 @@ export function createOpticalMotionTracker(): OpticalMotionTracker {
           pw = Math.max(8, Math.min(50, pw));
           ph = Math.max(8, Math.min(60, ph));
 
-          if (ph < 7 && clusterPixelCount < 70) {
+          if (ph < 2 && clusterPixelCount < 5) {
             continue;
           }
 

@@ -156,7 +156,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 6.2,
           heading: 120,
           behavior: 'Fence Breach Attempt',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -299,7 +299,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 3.4,
           heading: 140,
           behavior: 'Crawling/Wading River Bank',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -372,7 +372,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 2.6,
           heading: 130,
           behavior: 'Prone Crawl in Foliage',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -444,7 +444,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 4.8,
           heading: 210,
           behavior: 'Zero-Line Restricted Zone Entry',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -483,7 +483,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 3.2,
           heading: 100,
           behavior: 'Tampering Perimeter Approach',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -556,7 +556,7 @@ export function createInitialCameraTargets(camera: Camera): SimulatedTarget[] {
           speedKmh: 4.2,
           heading: 90,
           behavior: 'Unregistered Subject in Sector',
-          color: '#ef4444',
+          color: '#EA4335',
           trail: [],
           animCycle: 0,
           waypoints: [
@@ -666,7 +666,7 @@ export function updateSimulationStep(
     const breached = checkFenceBreach(next, fences);
     if (breached) {
       next.isBreaching = true;
-      next.color = '#ef4444'; // turn red on breach
+      next.color = '#EA4335'; // turn red on breach
     }
 
     return next;

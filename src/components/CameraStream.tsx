@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { createInitialCameraTargets, updateSimulationStep, SimulatedTarget } from '../utils/motionSimulation';
 import { renderTacticalSimulation } from '../utils/canvasRenderer';
+import { initAiVisionModel, detectObjects } from '../utils/aiVisionEngine';
+import { TemporalTrackingBuffer } from '../utils/temporalTracker';
 import { TACTICAL_VIDEO_FEEDS } from '../data/videoStreams';
 import VisionWorker from '../workers/visionWorker?worker';
 import { playTacticalAlertChime } from '../utils/webcamVision';
@@ -73,6 +75,7 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
 
   // Web Worker for asynchronous Computer Vision tracking
   const workerRef = useRef<Worker | null>(null);
+  const liveTrackerRef = useRef<any>(null);
   const isWorkerBusy = useRef(false);
   const latestCvResultRef = useRef<any>(null);
   const [activeBreachAlert, setActiveBreachAlert] = useState<string | null>(null);
@@ -81,6 +84,8 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
   // Initialize Web Worker
   useEffect(() => {
     workerRef.current = new VisionWorker();
+    liveTrackerRef.current = new TemporalTrackingBuffer();
+    initAiVisionModel();
     workerRef.current.postMessage({ type: 'INIT' });
 
     workerRef.current.onmessage = (e) => {
@@ -96,7 +101,7 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
   }, []);
 
   // Class-Based Detection Filter State (Default: Person Only, COCO Class ID: 1)
-  const [filterPersonOnly, setFilterPersonOnly] = useState<boolean>(true);
+  const [filterPersonOnly, setFilterPersonOnly] = useState<boolean>(false);
   const [filteredTelemetry, setFilteredTelemetry] = useState<{
     nonHumanCount: number;
     classes: string[];
@@ -271,8 +276,31 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
       // Computer Vision motion evaluation on live video/webcam
       if ((streamMode === 'webcam' || streamMode === 'video') && videoRef.current && videoRef.current.readyState >= 2) {
         
-        // Post frame to worker if ready
-        if (!isWorkerBusy.current && workerRef.current) {
+        if (streamMode === 'webcam') {
+           // Direct Main-Thread TFJS YOLO Object Detection for dynamic, accurate live tracking
+           if (!isWorkerBusy.current) {
+             isWorkerBusy.current = true;
+             detectObjects(videoRef.current).then(observations => {
+                isWorkerBusy.current = false;
+                if (liveTrackerRef.current) {
+                   const result = liveTrackerRef.current.update(observations, deltaTime, camera.virtualFences, {
+                      personOnly: filterPersonOnly,
+                      allowedClasses: filterPersonOnly ? ['person'] : []
+                   });
+                   currentTargets = result.targets;
+                   targetsRef.current = result.targets;
+                   if (result.filteredNonHumanCount !== undefined) {
+                     setFilteredTelemetry({
+                       nonHumanCount: result.filteredNonHumanCount,
+                       classes: result.filteredClasses,
+                       totalTracked: result.totalTrackedCount
+                     });
+                   }
+                }
+             });
+           }
+        }
+        else if (!isWorkerBusy.current && workerRef.current) {
           isWorkerBusy.current = true;
           try {
             // Offload heavy processing to Web Worker via ImageBitmap
@@ -303,14 +331,14 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
           if (cvResult.breachedFence) {
             // Anomaly persons, unauthorized subjects, or strangers trigger immediate breach alarm
             const hasAnomalyBreacher = cvResult.targets.some(
-              t => (!t.isAuthorizedTeamMember || t.isUnknownSubject || t.color === '#ef4444') && t.isBreaching
+              t => (!t.isAuthorizedTeamMember || t.isUnknownSubject || t.color === '#EA4335') && t.isBreaching
             );
             const allTargetsAuthorized = cvResult.targets.length > 0 && cvResult.targets.every(t => t.isAuthorizedTeamMember);
 
             // Trigger alert if an anomaly is breaching or fence is tripped without all-authorized verification
             if (hasAnomalyBreacher || !allTargetsAuthorized) {
               const now = Date.now();
-              if (now - lastBreachAlertThrottleRef.current > 4000) {
+              if (now - lastBreachAlertThrottleRef.current > 15000) {
                 lastBreachAlertThrottleRef.current = now;
                 playTacticalAlertChime('warning');
                 setActiveBreachAlert(cvResult.breachedFence.name);
@@ -357,15 +385,39 @@ export const CameraStream: React.FC<CameraStreamProps> = ({
         currentTargets.forEach(target => {
           if (target.isHuman) {
             const vector = extractBiometricVectorFromCanvas(canvas, target);
-            const bioMatch = biometricEngine.recognizeFace(vector);
+            const bioMatch = biometricEngine.recognizeFace(vector, undefined, target.trackId);
             target.biometricMatch = bioMatch;
             target.classificationStatus = bioMatch.isRecognized ? 'KNOWN' : 'ANOMALY';
             target.isAuthorizedTeamMember = bioMatch.isRecognized;
             target.isUnknownSubject = !bioMatch.isRecognized;
-            target.color = bioMatch.isRecognized ? '#10b981' : '#ef4444';
+            target.color = bioMatch.isRecognized ? '#10b981' : '#EA4335';
             target.label = bioMatch.isRecognized ? bioMatch.displayText : `⚠ [RED OBJECT] ANOMALY PERSON`;
           }
         });
+      }
+      
+      // Autonomous Anomaly Incident Generation
+      const detectedAnomaly = currentTargets.find(
+        t => (t.classificationStatus === 'ANOMALY' || t.isUnknownSubject || t.color === '#EA4335' || t.label?.toLowerCase().includes('anomaly'))
+      );
+
+      if (detectedAnomaly) {
+        const now = Date.now();
+        if (now - lastBreachAlertThrottleRef.current > 4000) {
+          lastBreachAlertThrottleRef.current = now;
+          playTacticalAlertChime('warning');
+          setActiveBreachAlert('AUTONOMOUS ANOMALY DETECTION');
+          setTimeout(() => setActiveBreachAlert(null), 3500);
+          if (onTripwireBreached) {
+            onTripwireBreached(camera, { 
+              id: 'anomaly-auto-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9), 
+              name: `Autonomous Detection: ${detectedAnomaly.label || 'Unknown Subject'}`, 
+              type: 'restricted_zone', 
+              points: [], 
+              active: true 
+            });
+          }
+        }
       }
 
       // Render clean C2 military overlay

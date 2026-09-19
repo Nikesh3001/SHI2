@@ -23,7 +23,7 @@ export interface DetectionObservation {
   cx: number;
   cy: number;
   mass: number;
-  classification: 'person' | 'object';
+  classification: 'person' | 'vehicle' | 'animal' | 'object';
   cocoClass: CocoClassName;
   cocoId: number;
   isHuman: boolean;
@@ -43,7 +43,7 @@ export interface TrackHistoryPoint {
   vx: number;
   vy: number;
   confidence: number;
-  classification: 'person' | 'object';
+  classification: 'person' | 'vehicle' | 'animal' | 'object';
   cocoClass: CocoClassName;
   hasFace: boolean;
 }
@@ -51,7 +51,7 @@ export interface TrackHistoryPoint {
 export interface TemporalTrack {
   trackId: number;
   persistentId: string;
-  classification: 'person' | 'object';
+  classification: 'person' | 'vehicle' | 'animal' | 'object';
   cocoClass: CocoClassName;
   cocoId: number;
   isHuman: boolean;
@@ -393,7 +393,7 @@ export class TemporalTrackingBuffer {
         track.classificationStatus = 'ANOMALY';
         track.isAuthorizedTeamMember = false;
         track.isUnknownSubject = true;
-        track.color = '#ef4444'; // BOLD RED FOR ANOMALY / UNREGISTERED PERSON
+        track.color = '#EA4335'; // BOLD RED FOR ANOMALY / UNREGISTERED PERSON
         track.label = `⚠ [RED OBJECT] ANOMALY PERSON: UNREGISTERED ${(track.confidence * 100).toFixed(0)}%`;
         track.isBreaching = true; // Anomaly person triggers red security alert
       }
@@ -460,7 +460,7 @@ export class TemporalTrackingBuffer {
       } else {
         classificationStatus = 'ANOMALY';
         isUnknownSubject = true;
-        color = '#ef4444'; // BOLD RED SQUARE OBJECT FOR ANOMALY / UNKNOWN
+        color = '#EA4335'; // BOLD RED SQUARE OBJECT FOR ANOMALY / UNKNOWN
         label = `⚠ [RED OBJECT] ANOMALY PERSON: UNREGISTERED ${(obs.confidence * 100).toFixed(0)}%`;
       }
     }
@@ -540,11 +540,11 @@ export class TemporalTrackingBuffer {
         // "it consider anomaly person as in green it must show excrpt as in red screen"
         // "except us everyone detedcted as new face and it is highlighted as in red screen object"
         // "else anyone are other than us are mark in red square object okay"
-        targetColor = '#ef4444';
+        targetColor = '#EA4335';
         targetLabel = `⚠ [RED OBJECT] ANOMALY PERSON: UNREGISTERED ${(track.confidence * 100).toFixed(0)}%`;
       }
     } else if (track.isBreaching) {
-      targetColor = '#ef4444';
+      targetColor = '#EA4335';
     }
 
     return {

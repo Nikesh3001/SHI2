@@ -68,13 +68,13 @@ export function renderTacticalSimulation(options: RenderOptions) {
       if (fence.type === 'restricted_zone') {
         ctx.closePath();
         ctx.fillStyle = fenceBreached 
-          ? (step % 30 < 15 ? 'rgba(239, 68, 68, 0.20)' : 'rgba(239, 68, 68, 0.08)')
+          ? (step % 30 < 15 ? 'rgba(234, 67, 53, 0.20)' : 'rgba(234, 67, 53, 0.08)')
           : 'rgba(245, 158, 11, 0.06)';
         ctx.fill();
       }
 
       // Clean military dashed boundary line
-      ctx.strokeStyle = fenceBreached ? '#ef4444' : '#f59e0b';
+      ctx.strokeStyle = fenceBreached ? '#EA4335' : '#f59e0b';
       ctx.lineWidth = fenceBreached ? 2 : 1.5;
       ctx.setLineDash([6, 4]);
       ctx.stroke();
@@ -83,7 +83,7 @@ export function renderTacticalSimulation(options: RenderOptions) {
       fence.points.forEach((pt) => {
         const px = (pt.x / 100) * w;
         const py = (pt.y / 100) * h;
-        ctx.fillStyle = fenceBreached ? '#ef4444' : '#f59e0b';
+        ctx.fillStyle = fenceBreached ? '#EA4335' : '#f59e0b';
         ctx.fillRect(px - 2.5, py - 2.5, 5, 5);
       });
 
@@ -93,7 +93,7 @@ export function renderTacticalSimulation(options: RenderOptions) {
       const ly = Math.max(14, (firstPt.y / 100) * h - 6);
 
       ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-      ctx.fillStyle = fenceBreached ? '#ef4444' : '#fbbf24';
+      ctx.fillStyle = fenceBreached ? '#EA4335' : '#fbbf24';
       ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
       ctx.shadowBlur = 4;
       ctx.fillText(
@@ -127,26 +127,35 @@ export function renderTacticalSimulation(options: RenderOptions) {
       );
 
       const isBreaching = target.isBreaching;
+      const isVehicle = target.classification === 'vehicle' || target.type === 'vehicle' || ['car', 'truck', 'bus', 'motorcycle', 'bicycle'].includes(target.cocoClass || '');
+      const isAnimal = target.classification === 'animal' || target.type === 'animal' || ['bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe'].includes(target.cocoClass || '');
+      
       const isAnomaly = Boolean(
-        target.classificationStatus === 'ANOMALY' ||
-        target.isUnknownSubject || 
-        isBreaching || 
-        target.color === '#ef4444' || 
-        target.label?.toLowerCase().includes('anomaly') || 
-        target.label?.toLowerCase().includes('unregistered') || 
-        target.label?.toLowerCase().includes('infiltrat') || 
-        target.label?.toLowerCase().includes('trespass') || 
-        (target.isHuman && !isAuth) || 
-        (target.type === 'person' && !isAuth) ||
-        (target.classification === 'person' && !isAuth)
+        !isVehicle && !isAnimal && (
+          target.classificationStatus === 'ANOMALY' ||
+          target.isUnknownSubject || 
+          isBreaching || 
+          target.color === '#EA4335' || 
+          target.label?.toLowerCase().includes('anomaly') || 
+          target.label?.toLowerCase().includes('unregistered') || 
+          target.label?.toLowerCase().includes('infiltrat') || 
+          target.label?.toLowerCase().includes('trespass') || 
+          (target.isHuman && !isAuth) || 
+          (target.type === 'person' && !isAuth) ||
+          (target.classification === 'person' && !isAuth)
+        )
       );
 
-      // Strict user rule:
-      // Authorized 6 team members (Nikesh Reddy & team) -> Green (#10b981)
-      // EXCEPT US: Anomaly persons, strangers, and intruders -> RED SQUARE OBJECT (#ef4444)
-      const strokeColor = isAuth 
-        ? '#10b981' 
-        : (isAnomaly ? '#ef4444' : (target.color || '#38bdf8'));
+      let strokeColor = target.color || '#94a3b8'; // Slate default
+      if (target.classification === 'person' || target.type === 'person' || target.isHuman) {
+        strokeColor = isAuth ? '#10b981' : (isAnomaly ? '#EA4335' : '#10b981'); // Green for persons (or Red if Anomaly)
+      } else if (isVehicle) {
+        strokeColor = '#3b82f6'; // Blue for vehicles
+      } else if (isAnimal) {
+        strokeColor = '#eab308'; // Yellow for animals
+      } else if (isAnomaly) {
+        strokeColor = '#EA4335'; // Red for non-person anomalies
+      }
 
       // Temporal Trajectory Breadcrumb Trail from Temporal History Buffer
       if (target.trail && target.trail.length > 1) {
@@ -158,7 +167,7 @@ export function renderTacticalSimulation(options: RenderOptions) {
           else ctx.lineTo(px, py);
         });
         ctx.strokeStyle = isAnomaly 
-          ? 'rgba(239, 68, 68, 0.65)' 
+          ? 'rgba(234, 67, 53, 0.65)' 
           : (isAuth ? 'rgba(16, 185, 129, 0.45)' : 'rgba(56, 189, 248, 0.4)');
         ctx.lineWidth = 1.5;
         ctx.setLineDash([3, 3]);
@@ -168,11 +177,11 @@ export function renderTacticalSimulation(options: RenderOptions) {
 
       // If ANOMALY / UNKNOWN / BREACH PERSON: Render prominent RED SQUARE OBJECT with pulsing red tint
       if (isAnomaly) {
-        ctx.fillStyle = (step % 30 < 15) ? 'rgba(239, 68, 68, 0.22)' : 'rgba(239, 68, 68, 0.10)';
+        ctx.fillStyle = (step % 30 < 15) ? 'rgba(234, 67, 53, 0.22)' : 'rgba(234, 67, 53, 0.10)';
         ctx.fillRect(cx, cy, bw, bh);
 
         // Bold solid red square outline
-        ctx.strokeStyle = '#ef4444';
+        ctx.strokeStyle = '#EA4335';
         ctx.lineWidth = 3;
         ctx.setLineDash([]);
         ctx.strokeRect(cx, cy, bw, bh);
@@ -188,10 +197,32 @@ export function renderTacticalSimulation(options: RenderOptions) {
         ctx.strokeRect(cx, cy, bw, bh);
       } else {
         // Thin faint bounding frame for other objects (vehicles, drones)
-        ctx.strokeStyle = isBreaching ? 'rgba(239, 68, 68, 0.5)' : 'rgba(56, 189, 248, 0.35)';
+        ctx.strokeStyle = isBreaching ? 'rgba(234, 67, 53, 0.5)' : 'rgba(56, 189, 248, 0.35)';
         ctx.lineWidth = 1;
         ctx.setLineDash([2, 2]);
         ctx.strokeRect(cx, cy, bw, bh);
+      }
+
+      // Dynamic Velocity Vector visualization
+      if ((target.vx !== 0 || target.vy !== 0) && (target.speedKmh || 0) > 0.1) {
+        const vxPx = (target.vx / 100) * w;
+        const vyPx = (target.vy / 100) * h;
+        
+        ctx.beginPath();
+        const centerXPx = cx + bw / 2;
+        const centerYPx = cy + bh / 2;
+        ctx.moveTo(centerXPx, centerYPx);
+        ctx.lineTo(centerXPx + vxPx * 1.5, centerYPx + vyPx * 1.5);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.arc(centerXPx + vxPx * 1.5, centerYPx + vyPx * 1.5, 2, 0, Math.PI * 2);
+        ctx.fillStyle = strokeColor;
+        ctx.fill();
+        ctx.setLineDash([]);
       }
 
       // Authentic Military Reticle Corner Brackets (┌ ┐ └ ┘)
@@ -229,23 +260,41 @@ export function renderTacticalSimulation(options: RenderOptions) {
 
       if (isAuth) {
         tagText = `✓ [${target.memberId || target.biometricMatch?.matchedId || 'AUTH-ID'}] ${(target.memberName || target.biometricMatch?.matchedName || 'AUTHORIZED MEMBER').toUpperCase()} ${(target.confidence * 100).toFixed(0)}%`;
-        subTagText = 'AUTHORIZED TEAM // CLEARANCE LEVEL 4';
+        subTagText = `FUSION [YOLO+LiDAR]: MOVING PERSON // AUTH TEAM // ${(target.speedKmh || 0).toFixed(1)} KM/H`;
       } else if (isAnomaly) {
-        tagText = `⚠ [RED OBJECT] ANOMALY PERSON: UNREGISTERED ${(target.confidence * 100).toFixed(0)}%`;
-        subTagText = 'ALERT: NOT IN AUTHORIZED 6-MEMBER DB';
+        tagText = `⚠ [RED OBJECT] ANOMALY PERSON ${(target.confidence * 100).toFixed(0)}%`;
+        subTagText = `FUSION [YOLO+LiDAR]: MOVING PERSON // UNREGISTERED // ${(target.speedKmh || 0).toFixed(1)} KM/H`;
+      } else if (isVehicle) {
+        tagText = `[VEHICLE] ${target.label ? target.label.toUpperCase() : (target.cocoClass || 'TARGET').toUpperCase()} ${(target.confidence * 100).toFixed(0)}%`;
+        subTagText = `SPEED: ${(target.speedKmh || 0).toFixed(1)} KM/H // TRK-ID: ${target.trackId || 1}`;
+      } else if (isAnimal) {
+        tagText = `[ANIMAL] ${target.label ? target.label.toUpperCase() : (target.cocoClass || 'TARGET').toUpperCase()} ${(target.confidence * 100).toFixed(0)}%`;
+        subTagText = `SPEED: ${(target.speedKmh || 0).toFixed(1)} KM/H // TRK-ID: ${target.trackId || 1}`;
+      } else if (target.classification === 'person' || target.type === 'person') {
+        tagText = `[PERSON] ${target.label ? target.label.toUpperCase() : 'UNKNOWN PERSON'} ${(target.confidence * 100).toFixed(0)}%`;
+        subTagText = `SPEED: ${(target.speedKmh || 0).toFixed(1)} KM/H // TRK-ID: ${target.trackId || 1}`;
       } else {
         tagText = target.label
           ? `${target.label.toUpperCase()} ${(target.confidence * 100).toFixed(0)}%`
-          : `TARGET #${target.trackId || 1} ${(target.confidence * 100).toFixed(0)}%`;
+          : `[OBJECT] ${(target.cocoClass || 'TARGET').toUpperCase()} #${target.trackId || 1} ${(target.confidence * 100).toFixed(0)}%`;
+        subTagText = `SPEED: ${(target.speedKmh || 0).toFixed(1)} KM/H`;
       }
 
       ctx.font = '700 9px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
       const textWidth = ctx.measureText(tagText).width;
       const tagBoxHeight = subTagText ? 24 : 14;
 
-      ctx.fillStyle = isAnomaly 
-        ? 'rgba(185, 28, 28, 0.95)' 
-        : (isAuth ? 'rgba(6, 78, 59, 0.95)' : (isBreaching ? 'rgba(185, 28, 28, 0.9)' : 'rgba(15, 23, 42, 0.9)'));
+      if (isAnomaly) {
+        ctx.fillStyle = 'rgba(234, 67, 53, 0.95)';
+      } else if (isAuth || target.classification === 'person' || target.type === 'person') {
+        ctx.fillStyle = 'rgba(6, 78, 59, 0.95)'; // Dark Green
+      } else if (isVehicle) {
+        ctx.fillStyle = 'rgba(30, 58, 138, 0.95)'; // Dark Blue
+      } else if (isAnimal) {
+        ctx.fillStyle = 'rgba(113, 63, 18, 0.95)'; // Dark Yellow/Brown
+      } else {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'; // Slate
+      }
       ctx.fillRect(cx, cy - tagBoxHeight - 2, textWidth + 10, tagBoxHeight);
 
       ctx.strokeStyle = strokeColor;
@@ -274,7 +323,7 @@ export function renderTacticalSimulation(options: RenderOptions) {
 
       // Pulsing red alert indicator for anomaly person
       if (isAnomaly) {
-        ctx.fillStyle = (step % 20 < 10) ? '#ef4444' : '#ffffff';
+        ctx.fillStyle = (step % 20 < 10) ? '#EA4335' : '#ffffff';
         ctx.beginPath();
         ctx.arc(midX, midY, 3, 0, Math.PI * 2);
         ctx.fill();
@@ -319,13 +368,13 @@ export function renderTacticalSimulation(options: RenderOptions) {
   if (isRecording) {
     // Red REC pulse
     const blink = step % 40 < 20;
-    osdCtx.fillStyle = blink ? '#ef4444' : '#991b1b';
+    osdCtx.fillStyle = blink ? '#EA4335' : '#991b1b';
     osdCtx.beginPath();
     osdCtx.arc(w - 74, 28, 4, 0, Math.PI * 2);
     osdCtx.fill();
 
     osdCtx.font = '700 10px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-    drawOsdText('REC', w - 65, 23, '#ef4444', 'left');
+    drawOsdText('REC', w - 65, 23, '#EA4335', 'left');
   } else {
     // Quiet green LIVE indicator
     osdCtx.fillStyle = '#10b981';

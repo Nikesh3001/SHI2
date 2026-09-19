@@ -63,6 +63,7 @@ export default function App() {
 
   // Unacknowledged Alert Count
   const unreadAlertCount = alerts.filter(a => a.status === 'NEW').length;
+  const hasActiveAnomaly = alerts.some(a => a.status === 'NEW' && a.severity === 'CRITICAL');
 
   // Handlers
   const handleSelectCamera = (camId: string) => {
@@ -107,8 +108,8 @@ export default function App() {
 
   const handleSaveRecording = (camera: Camera, durationSecs: number) => {
     const newAlert: SecurityAlert = {
-      id: `rec-${Date.now()}`,
-      eventId: `ARCHIVE-${Date.now()}`,
+      id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      eventId: `ARCHIVE-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       cameraId: camera.id,
       cameraName: camera.name,
       bopName: camera.bopName,
@@ -146,7 +147,7 @@ export default function App() {
     const breachCameraId = cameras[0]?.id || 'cam-bop-01';
 
     const newAlert: SecurityAlert = {
-      id: `alert-sim-${Date.now()}`,
+      id: `alert-sim-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       eventId: `EV-${Date.now().toString().slice(-5)}`,
       timestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
       cameraId: breachCameraId,
@@ -191,7 +192,7 @@ export default function App() {
     }
 
     const newCam: Camera = {
-      id: `cam-pub-${Date.now()}`,
+      id: `cam-pub-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       name: pubCam.name,
       code: `EXT-${pubCam.id.slice(0,4).toUpperCase()}`,
       sector: 'External Public Feeds',
@@ -220,9 +221,10 @@ export default function App() {
   };
 
   const handleTripwireBreached = (camera: Camera, fence: VirtualFence) => {
+    const uniqueId = Math.random().toString(36).substring(2, 9);
     const newAlert: SecurityAlert = {
-      id: `alert-cv-${Date.now()}`,
-      eventId: `EVT-CV-${Date.now().toString(36).toUpperCase()}`,
+      id: `alert-cv-${Date.now()}-${uniqueId}`,
+      eventId: `EVT-CV-${Date.now().toString(36).toUpperCase()}-${uniqueId.toUpperCase()}`,
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
       cameraId: camera.id,
       cameraName: camera.name,
